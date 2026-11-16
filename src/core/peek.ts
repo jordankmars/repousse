@@ -58,6 +58,8 @@ interface Stage {
 	menu: HTMLElement;
 	lift: Motion;
 	reveal: Motion;
+	/** Where the trigger was when the clone and menu were last placed. */
+	anchor: { x: number; y: number };
 }
 
 /** Only one menu is ever up, so a new one sends the last one straight home. */
@@ -175,6 +177,7 @@ export class Peek {
 		this.uncloak();
 		this.returnFocus();
 		this.releaseScroll();
+		this.follow();
 		stage.overlay.style.pointerEvents = "none";
 		stage.menu.style.pointerEvents = "none";
 		const done = latch(3, () => this.finish());
@@ -191,6 +194,7 @@ export class Peek {
 		this.squeeze.jump(1);
 		const stage = this.stage ?? this.mount(from);
 		if (!stage) return;
+		this.unfollow();
 		if (current !== this) current?.teardown();
 		current = this;
 		stage.overlay.style.pointerEvents = "";
@@ -263,7 +267,15 @@ export class Peek {
 		};
 		const reveal = new Motion(0, REVEAL, applyReveal);
 
-		const stage = { overlay, adopted: !!given, clone, menu, lift, reveal };
+		const stage = {
+			overlay,
+			adopted: !!given,
+			clone,
+			menu,
+			lift,
+			reveal,
+			anchor: { x: 0, y: 0 },
+		};
 		this.stage = stage;
 		const target = this.options.container?.() ?? document.body;
 		// Fixed elements paint in tree order, and the menu is already mounted. A
@@ -284,8 +296,12 @@ export class Peek {
 	}
 
 	/** Lines the clone up with the trigger and puts the menu next to it. */
-	private place({ clone, menu }: Stage, trigger: HTMLElement): void {
+	private place(stage: Stage, trigger: HTMLElement): void {
+		const { clone, menu } = stage;
 		const rect = trigger.getBoundingClientRect();
+		stage.anchor = { x: rect.left, y: rect.top };
+		clone.style.translate = "";
+		menu.style.translate = "";
 		Object.assign(clone.style, {
 			left: `${rect.left}px`,
 			top: `${rect.top}px`,
@@ -327,6 +343,7 @@ export class Peek {
 		stage.menu.removeEventListener("contextmenu", blockContextMenu);
 		this.releaseScroll();
 		this.releaseInert();
+		this.unfollow();
 		const { style } = stage.menu;
 		for (const prop of [
 			"position",
@@ -335,6 +352,7 @@ export class Peek {
 			"opacity",
 			"transform",
 			"transform-origin",
+			"translate",
 			"pointer-events",
 			"outline",
 		]) {
@@ -409,6 +427,30 @@ export class Peek {
 		removeEventListener("resize", this.onResize);
 		window.visualViewport?.removeEventListener("resize", this.onResize);
 	}
+
+	/**
+	 * Scrolling is back as soon as it starts closing, so the copy and menu would
+	 * otherwise sit still on screen while the page moves under them.
+	 */
+	private follow(): void {
+		addEventListener("scroll", this.onFollowScroll, true);
+		window.visualViewport?.addEventListener("scroll", this.onFollowScroll);
+	}
+
+	private unfollow(): void {
+		removeEventListener("scroll", this.onFollowScroll, true);
+		window.visualViewport?.removeEventListener("scroll", this.onFollowScroll);
+	}
+
+	/** Shifts the copy and menu by however far the trigger has moved. */
+	private onFollowScroll = (): void => {
+		const { stage, el } = this;
+		if (!stage || !el) return;
+		const rect = el.getBoundingClientRect();
+		const shift = `${rect.left - stage.anchor.x}px ${rect.top - stage.anchor.y}px`;
+		stage.clone.style.translate = shift;
+		stage.menu.style.translate = shift;
+	};
 
 	private releaseScroll(): void {
 		this.unlock?.();

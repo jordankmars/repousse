@@ -765,6 +765,67 @@ describe("staying in place", () => {
 		dispatchEvent(new Event("resize"));
 		expect(lifted()?.style.left).toBe("10px");
 	});
+
+	it("follows the trigger when the page scrolls while closing", () => {
+		const { trigger, menu } = setup();
+		trigger.getBoundingClientRect = () => rect(10, 20);
+		hold(trigger);
+		peek.close();
+		trigger.getBoundingClientRect = () => rect(10, -80);
+		document.dispatchEvent(new Event("scroll"));
+		expect(lifted()?.style.left).toBe("10px");
+		expect(lifted()?.style.translate).toBe("0px -100px");
+		expect(menu.style.translate).toBe("0px -100px");
+	});
+
+	it("follows a nested scroller too", () => {
+		const { trigger } = setup();
+		trigger.getBoundingClientRect = () => rect(10, 20);
+		hold(trigger);
+		peek.close();
+		trigger.getBoundingClientRect = () => rect(10, 50);
+		trigger.parentElement?.dispatchEvent(new Event("scroll"));
+		expect(lifted()?.style.translate).toBe("0px 30px");
+	});
+
+	it("doesn't follow while open", () => {
+		const { trigger } = setup();
+		trigger.getBoundingClientRect = () => rect(10, 20);
+		hold(trigger);
+		trigger.getBoundingClientRect = () => rect(10, -80);
+		document.dispatchEvent(new Event("scroll"));
+		expect(lifted()?.style.translate).toBe("");
+	});
+
+	it("stops following once closed and cleans up the menu", () => {
+		const { trigger, menu } = setup();
+		trigger.getBoundingClientRect = () => rect(10, 20);
+		hold(trigger);
+		peek.close();
+		document.dispatchEvent(new Event("scroll"));
+		vi.runAllTimers();
+		expect(peek.phase).toBe("closed");
+		expect(menu.style.translate).toBe("");
+		trigger.getBoundingClientRect = () => rect(10, -80);
+		document.dispatchEvent(new Event("scroll"));
+		expect(menu.style.translate).toBe("");
+	});
+
+	it("drops the shift when reopened mid-close and placed again", () => {
+		const { trigger, menu } = setup();
+		trigger.getBoundingClientRect = () => rect(10, 20);
+		hold(trigger);
+		pointer("pointerup", window);
+		peek.close();
+		trigger.getBoundingClientRect = () => rect(10, -80);
+		document.dispatchEvent(new Event("scroll"));
+		trigger.dispatchEvent(new MouseEvent("contextmenu", { cancelable: true }));
+		expect(peek.phase).toBe("open");
+		dispatchEvent(new Event("resize"));
+		expect(lifted()?.style.top).toBe("-80px");
+		expect(lifted()?.style.translate).toBe("");
+		expect(menu.style.translate).toBe("");
+	});
 });
 
 describe("one at a time", () => {
